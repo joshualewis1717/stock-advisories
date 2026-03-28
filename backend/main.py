@@ -16,10 +16,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from pytrends.request import TrendReq
 
-try:
-    import torch
-except Exception:
-    torch = None
+try: import torch
+except Exception: torch = None
 
 app = FastAPI(title="Trend Grave API")
 
@@ -39,11 +37,9 @@ TRAINING_LOOKBACK = 60
 PREDICTION_HORIZON = 20
 MIN_TRAINING_SAMPLES = 40
 
-
 class TrainModelRequest(BaseModel):
     symbols: list[str] = Field(..., min_length=2, description="Stock symbols to train on")
     epochs: int = Field(default=30, ge=5, le=200)
-
 
 def get_pytrends() -> TrendReq | None:
     global pytrends
@@ -218,12 +214,10 @@ def fetch_history(symbol: str, period: str) -> pd.DataFrame | None:
 
 def get_stock_snapshot(symbol: str) -> dict[str, Any] | None:
     history = fetch_history(symbol, period="3mo")
-    if history is None:
-        return None
+    if history is None: return None
 
     close_series = history["Close"].dropna()
-    if close_series.empty:
-        return None
+    if close_series.empty: return None
 
     try:
         ticker = yf.Ticker(symbol)
@@ -320,8 +314,7 @@ def build_samples_from_history(history: pd.DataFrame) -> list[tuple[list[float],
         window = clean_history.iloc[end_index - TRAINING_LOOKBACK:end_index]
         current_close = float(clean_history.iloc[end_index]["Close"])
         future_close = float(clean_history.iloc[end_index + PREDICTION_HORIZON]["Close"])
-        if current_close == 0:
-            continue
+        if current_close == 0: continue
 
         feature_vector = compute_feature_vector(window)
         target_return = ((future_close - current_close) / current_close) * 100
@@ -375,8 +368,7 @@ def compute_feature_vector(history_window: pd.DataFrame) -> list[float]:
 
 class StockRanker(torch.nn.Module if torch is not None else object):
     def __init__(self, input_dim: int) -> None:
-        if torch is None:
-            raise RuntimeError("PyTorch is not available.")
+        if torch is None: raise RuntimeError("PyTorch is not available.")
 
         super().__init__()
         self.layers = torch.nn.Sequential(
@@ -467,7 +459,6 @@ def train_ranker_model(
         "validation_mae": validation_mae,
     }
 
-
 def load_pytorch_model() -> StockRanker | None:
     if torch is None or not MODEL_PATH.exists():
         return None
@@ -479,7 +470,6 @@ def load_pytorch_model() -> StockRanker | None:
     model.eval()
     return model
 
-
 def load_model_metadata() -> dict[str, Any] | None:
     if not METADATA_PATH.exists():
         return None
@@ -489,7 +479,6 @@ def load_model_metadata() -> dict[str, Any] | None:
     except Exception as exc:
         print("Error loading model metadata:", exc)
         return None
-
 
 def build_model_insight(
     symbol: str,
@@ -556,7 +545,6 @@ def build_model_insight(
         "training_symbols": metadata.get("symbols", []),
     }
 
-
 def summarize_keyword_signal(keyword_predictions: list[dict[str, Any]]) -> dict[str, Any]:
     slopes = [
         float(item["features"]["slope"])
@@ -578,10 +566,8 @@ def summarize_keyword_signal(keyword_predictions: list[dict[str, Any]]) -> dict[
         "adjustment": round(adjustment, 2),
     }
 
-
 def clip_score(value: float) -> float:
     return float(np.clip(value, 0, 100))
-
 
 def rank_from_score(score: float) -> str:
     if score >= 80:
@@ -593,7 +579,6 @@ def rank_from_score(score: float) -> str:
     if score >= 30:
         return "Caution"
     return "Avoid"
-
 
 def confidence_from_metadata(metadata: dict[str, Any]) -> str:
     sample_count = int(metadata.get("sample_count", 0))
@@ -624,8 +609,7 @@ def parse_keywords(raw_keywords: str | None) -> list[str]:
 
 def generate_related_keywords(symbol: str, company_name: str) -> list[str]:
     llm_keywords = generate_keywords_with_local_llm(symbol, company_name)
-    if llm_keywords:
-        return llm_keywords[:6]
+    if llm_keywords: return llm_keywords[:6]
 
     return generate_related_keywords_fallback(symbol, company_name)
 

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { KeywordPredictionGrid } from './components/KeywordPredictionGrid'
 import { Layout } from './components/Layout'
+import { ModelInsightPanel } from './components/ModelInsightPanel'
 import { StockInput } from './components/StockInput'
 import { StockPriceChart } from './components/StockPriceChart'
 
@@ -35,10 +36,44 @@ type StockDashboardResponse = {
   change_percent: number
   stock_data: StockPoint[]
   keywords: KeywordPrediction[]
+  model_insight: ModelInsight | null
   error?: string
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
+
+type ModelInsight = {
+  trained: boolean
+  error?: string
+  prediction_horizon_days?: number
+  predicted_return_percent?: number
+  model_score?: number
+  holistic_score?: number
+  rank?: string
+  confidence?: string
+  momentum_adjustment?: number
+  training_symbols: string[]
+  keyword_signal?: {
+    average_slope: number
+    up_count: number
+    down_count: number
+    adjustment: number
+  }
+  feature_values?: Record<string, number>
+}
+
+type TrainModelResponse = {
+  status?: string
+  error?: string
+  sample_count?: number
+  symbols?: string[]
+  pytorch_available?: boolean
+  metrics?: {
+    training_loss?: number
+    validation_loss?: number
+    validation_mae?: number
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -50,6 +85,10 @@ function toNumber(value: unknown): number | undefined {
 
 function toStringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined
+}
+
+function toBooleanValue(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined
 }
 
 function normalizeTrendPoints(value: unknown): KeywordTrendPoint[] {
@@ -152,6 +191,80 @@ function normalizeKeywords(value: unknown): KeywordPrediction[] {
   })
 }
 
+function normalizeModelInsight(value: unknown): ModelInsight | null {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  const trainingSymbols = Array.isArray(value.training_symbols)
+    ? value.training_symbols.flatMap((entry) =>
+        typeof entry === 'string' && entry.trim() ? [entry] : [],
+      )
+    : []
+
+  const keywordSignal = isRecord(value.keyword_signal)
+    ? {
+        average_slope: toNumber(value.keyword_signal.average_slope) ?? 0,
+        up_count: toNumber(value.keyword_signal.up_count) ?? 0,
+        down_count: toNumber(value.keyword_signal.down_count) ?? 0,
+        adjustment: toNumber(value.keyword_signal.adjustment) ?? 0,
+      }
+    : undefined
+
+  const featureValues = isRecord(value.feature_values)
+    ? Object.fromEntries(
+        Object.entries(value.feature_values).flatMap(([key, entryValue]) => {
+          const numericValue = toNumber(entryValue)
+          return numericValue === undefined ? [] : [[key, numericValue]]
+        }),
+      )
+    : undefined
+
+  return {
+    trained: toBooleanValue(value.trained) ?? false,
+    error: toStringValue(value.error),
+    prediction_horizon_days: toNumber(value.prediction_horizon_days),
+    predicted_return_percent: toNumber(value.predicted_return_percent),
+    model_score: toNumber(value.model_score),
+    holistic_score: toNumber(value.holistic_score),
+    rank: toStringValue(value.rank),
+    confidence: toStringValue(value.confidence),
+    momentum_adjustment: toNumber(value.momentum_adjustment),
+    training_symbols: trainingSymbols,
+    keyword_signal: keywordSignal,
+    feature_values: featureValues,
+  }
+}
+
+function normalizeTrainModelResponse(value: unknown): TrainModelResponse {
+  if (!isRecord(value)) {
+    return { error: 'The backend returned an invalid training response.' }
+  }
+
+  const symbols = Array.isArray(value.symbols)
+    ? value.symbols.flatMap((entry) =>
+        typeof entry === 'string' && entry.trim() ? [entry] : [],
+      )
+    : undefined
+
+  const metrics = isRecord(value.metrics)
+    ? {
+        training_loss: toNumber(value.metrics.training_loss),
+        validation_loss: toNumber(value.metrics.validation_loss),
+        validation_mae: toNumber(value.metrics.validation_mae),
+      }
+    : undefined
+
+  return {
+    status: toStringValue(value.status),
+    error: toStringValue(value.error),
+    sample_count: toNumber(value.sample_count),
+    symbols,
+    pytorch_available: toBooleanValue(value.pytorch_available),
+    metrics,
+  }
+}
+
 function normalizeDashboardResponse(payload: unknown): StockDashboardResponse | null {
   if (!isRecord(payload)) {
     return null
@@ -169,6 +282,7 @@ function normalizeDashboardResponse(payload: unknown): StockDashboardResponse | 
     change_percent: toNumber(payload.change_percent) ?? 0,
     stock_data: normalizeStockPoints(payload.stock_data),
     keywords: normalizeKeywords(payload.keywords),
+    model_insight: normalizeModelInsight(payload.model_insight),
     error: toStringValue(payload.error),
   }
 }
@@ -178,17 +292,13 @@ function App() {
   const [result, setResult] = useState<StockDashboardResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [trainingSymbols, setTrainingSymbols] = useState(
+    'NVDA, AAPL, MSFT, AMZN, GOOGL, META, TSLA, PLTR',
+  )
+  const [trainingMessage, setTrainingMessage] = useState<string | null>(null)
+  const [isTraining, setIsTraining] = useState(false)
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-
-    const trimmedSymbol = symbol.trim().toUpperCase()
-    if (!trimmedSymbol) {
-      setError('Enter a stock symbol to analyze.')
-      setResult(null)
-      return
-    }
-
+  async function loadDashboard(trimmedSymbol: string) {
     setIsLoading(true)
     setError(null)
 
@@ -230,6 +340,79 @@ function App() {
       setError(message)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    const trimmedSymbol = symbol.trim().toUpperCase()
+    if (!trimmedSymbol) {
+      setError('Enter a stock symbol to analyze.')
+      setResult(null)
+      return
+    }
+
+    await loadDashboard(trimmedSymbol)
+  }
+
+  async function handleTrainModel(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    const symbols = trainingSymbols
+      .split(',')
+      .map((entry) => entry.trim().toUpperCase())
+      .filter(Boolean)
+
+    if (symbols.length < 2) {
+      setTrainingMessage('Enter at least two stock symbols to train the model.')
+      return
+    }
+
+    setIsTraining(true)
+    setTrainingMessage(null)
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/train-model`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          symbols,
+        }),
+      })
+
+      const payload = normalizeTrainModelResponse(await response.json())
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? `Training failed with status ${response.status}.`)
+      }
+
+      if (payload.error) {
+        throw new Error(payload.error)
+      }
+
+      const trainedCount = payload.sample_count ?? 0
+      const validationMae = payload.metrics?.validation_mae
+      setTrainingMessage(
+        validationMae === undefined
+          ? `Model trained on ${trainedCount} samples.`
+          : `Model trained on ${trainedCount} samples with validation MAE ${validationMae.toFixed(2)}.`,
+      )
+
+      const currentSymbol = result?.symbol ?? symbol.trim().toUpperCase()
+      if (currentSymbol) {
+        await loadDashboard(currentSymbol)
+      }
+    } catch (trainingError) {
+      setTrainingMessage(
+        trainingError instanceof Error
+          ? trainingError.message
+          : 'Unable to train the PyTorch model.',
+      )
+    } finally {
+      setIsTraining(false)
     }
   }
 
@@ -288,6 +471,17 @@ function App() {
         isLoading={isLoading}
         price={result?.price ?? null}
         symbol={displaySymbol}
+      />
+
+      <ModelInsightPanel
+        insight={result?.model_insight ?? null}
+        isLoading={isLoading}
+        isTraining={isTraining}
+        onSubmit={handleTrainModel}
+        onTrainingSymbolsChange={setTrainingSymbols}
+        symbol={displaySymbol}
+        trainingMessage={trainingMessage}
+        trainingSymbols={trainingSymbols}
       />
 
       <KeywordPredictionGrid

@@ -3,7 +3,7 @@ import type { PropsWithChildren } from 'react'
 export function Layout({ children }: PropsWithChildren) {
   return (
     <main className="grid gap-6">
-      <header className="flex items-center justify-between rounded-[14px] bg-black border border-white/16 overflow-hidden">
+      {/* <header className="flex items-center justify-between rounded-[14px] bg-black border border-white/16 overflow-hidden">
         <div className="inline-flex items-center gap-4 bg-black">
           <img
             className="h-11 w-11  object-cover shadow-[0_14px_28px_rgba(2,6,23,0.36),inset_0_1px_0_rgba(255,255,255,0.08)]"
@@ -16,7 +16,7 @@ export function Layout({ children }: PropsWithChildren) {
             </p>
           </div>
         </div>
-      </header>
+      </header> */}
 
       {children}
     </main>

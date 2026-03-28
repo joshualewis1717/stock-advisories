@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import './App.css'
 import { KeywordInput } from './components/KeywordInput'
 import { Layout } from './components/Layout'
 import { PredictionCard } from './components/PredictionCard'
@@ -84,25 +83,31 @@ function App() {
 
   return (
     <Layout>
-      <section className="hero-panel">
-        <div className="hero-copy">
-          <span className="eyebrow">Trend Grave Dashboard</span>
-          <h1>Predict whether a trend still has room to run.</h1>
-          <p>
+      <section className="relative overflow-hidden rounded-[28px] border border-white/12 bg-[linear-gradient(180deg,rgba(8,15,27,0.78),rgba(8,15,27,0.58))] p-8 shadow-[0_30px_90px_rgba(2,6,23,0.55),0_12px_34px_rgba(2,6,23,0.35)] backdrop-blur-3xl before:pointer-events-none before:absolute before:inset-0 before:bg-[linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.012)_38%,rgba(255,255,255,0))] sm:p-10">
+        <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+          <div>
+            <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-cyan-300">
+              Trend Grave Dashboard
+            </span>
+            <h1 className="mt-3 max-w-[12ch] font-['Space_Grotesk',_'Avenir_Next',_sans-serif] text-4xl leading-none font-semibold tracking-[-0.04em] text-slate-50 sm:text-6xl">
+              Predict whether a trend still has room to run.
+            </h1>
+            <p className="mt-4 max-w-2xl text-base text-slate-400 sm:text-lg">
             Search a keyword, fetch the FastAPI model output, and inspect the
             recent Google Trends history in one place.
-          </p>
-        </div>
+            </p>
+          </div>
 
-        <KeywordInput
-          keyword={keyword}
-          isLoading={isLoading}
-          onKeywordChange={setKeyword}
-          onSubmit={handleSubmit}
-        />
+          <KeywordInput
+            keyword={keyword}
+            isLoading={isLoading}
+            onKeywordChange={setKeyword}
+            onSubmit={handleSubmit}
+          />
+        </div>
       </section>
 
-      <section className="dashboard-grid">
+      <section className="grid items-stretch gap-6 lg:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]">
         <PredictionCard
           direction={direction}
           error={error}
